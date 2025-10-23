@@ -1,63 +1,111 @@
 package com.example.game;
-
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 
 /**
- * データベースに接続し、あっちむいてほいの試合結果を取得・表示するクラスです。
- * <p>
- * MySQLのattimuitehoiデータベースに接続し、match_resultテーブルの全レコードを
- * コンソールに出力します。
- * </p>
+ * データベースへの接続とあっちむいてホイの成績情報の取得を担当するクラスです。
  */
 public class DB {
 
-    /** MySQLデータベースの接続URL */
-    private static final String URL = "jdbc:mysql://localhost:3306/attimuitehoi";
-
-    /** データベース接続用のユーザー名 */
-    private static final String USERNAME = "root";
-
-    /** データベース接続用のパスワード */
-    private static final String PASSWORD = "admin123";
+    private static final String DB_URL
+            = "jdbc:mysql://localhost:3306/attimuitehoi";
+    private static final String DB_USER = "root";
+    private static final String DB_PASSWORD = "admin123";
 
     /**
-     * メインメソッド。
-     * MySQLデータベースに接続し、match_resultテーブルの内容を取得してコンソールに表示します。
+     * 過去10回の対戦成績を取得します。
      *
-     * @param args コマンドライン引数（このプログラムでは使用しません）
+     * @return MatchResultのリスト（最新10件）
      */
-    public static void main(String[] args) {
-        // MySQLへの接続
-        try (Connection connection = DriverManager.getConnection(URL, USERNAME, PASSWORD)) {
-            System.out.println("attimuitehoi データベースに接続しました。");
+    public List<MatchResult> getLast10Matches() {
+        List<MatchResult> results = new ArrayList<>();
+        String sql = "SELECT * FROM match_result ORDER BY match_date DESC LIMIT 10";
 
-            // SQLクエリの実行
-            try (Statement statement = connection.createStatement()) {
-                String sql = "SELECT * FROM match_result";
-                try (ResultSet resultSet = statement.executeQuery(sql)) {
-                    // 結果の処理
-                    while (resultSet.next()) {
-                        int id = resultSet.getInt("id");
-                        String date = resultSet.getString("match_date");
-                        String player = resultSet.getString("player_direction");
-                        String cpu = resultSet.getString("cpu_direction");
-                        String outcome = resultSet.getString("outcome");
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
 
-                        System.out.println("ID: " + id +
-                                ", DATE: " + date +
-                                ", PLAYER: " + player +
-                                ", CPU: " + cpu +
-                                ", OUTCOME: " + outcome);
+            while (rs.next()) {
+                MatchResult result = new MatchResult(
+                        rs.getInt("id"),
+                        rs.getString("match_date"),
+                        rs.getString("player_direction"),
+                        rs.getString("cpu_direction"),
+                        rs.getString("outcome"));
+                results.add(result);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return results;
+    }
+
+    /**
+     * 月単位で勝敗などの成績を集計して取得します。
+     *
+     * @return 月ごとの成績を管理するMonthlyStatsオブジェクトのマップ（キーは"YYYY-MM"形式の年月）
+     */
+    public Map<String, MonthlyStats> getMonthlyStats() {
+        Map<String, MonthlyStats> monthlyStats = new LinkedHashMap<>();
+        String sql = "SELECT DATE_FORMAT(match_date, '%Y-%m') AS month, outcome, COUNT(*) AS count "
+                   + "FROM match_result GROUP BY month, outcome ORDER BY month";
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
+
+            while (rs.next()) {
+                String month = rs.getString("month");
+                String outcome = rs.getString("outcome");
+                int count = rs.getInt("count");
+
+                monthlyStats.putIfAbsent(month, new MonthlyStats(month));
+                monthlyStats.get(month).addCount(outcome, count);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return monthlyStats;
+    }
+
+    /**
+     * 最も長い連勝記録を取得します。
+     *
+     * @return 連勝の最大回数
+     */
+    public int getLongestWinningStreak() {
+        int maxStreak = 0;
+        int currentStreak = 0;
+
+        String sql = "SELECT outcome FROM match_result ORDER BY match_date";
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             PreparedStatement pstmt = conn.prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
+
+            while (rs.next()) {
+                String outcome = rs.getString("outcome");
+                if ("勝ち".equals(outcome)) {
+                    currentStreak++;
+                    if (currentStreak > maxStreak) {
+                        maxStreak = currentStreak;
                     }
+                } else {
+                    currentStreak = 0;
                 }
             }
         } catch (SQLException e) {
-            System.out.println("MySQLへの接続に失敗しました。");
             e.printStackTrace();
         }
+
+        return maxStreak;
     }
 }

@@ -20,7 +20,7 @@ public class ResultLogger {
 
 	// DB接続情報のURL
 	private static final String DB_URL
-			= "jdbc:mysql://localhost:3306/attimuitehoi"; // 必要に応じてDB名変更
+			= "jdbc:mysql://localhost:3306/attimuitehoi";
 	// DBユーザー名
 	private static final String DB_USER = "root";
 	// DBパスワード
